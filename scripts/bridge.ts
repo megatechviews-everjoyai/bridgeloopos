@@ -3,72 +3,51 @@ import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import http from 'http';
 
-// 1. Load Environment Variables from your Render Dashboard / .env
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-// Safety check to ensure the engine has its fuel
 if (!token || !supabaseUrl || !supabaseAnonKey) {
-  console.error("❌ ERROR: Missing environment variables in Render Dashboard.");
+  console.error("❌ Missing environment variables.");
   process.exit(1);
 }
 
-// 2. Initialize Supabase & Telegram
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const bot = new TelegramBot(token, { polling: true });
 
-console.log("🚀 Bridgeloop OS: Engine Started...");
+console.log("🚀 Bridgeloop OS: Smart Engine Active...");
 
-// 3. Main Logic: Listen for any message and log to Supabase
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text || "";
-  const username = msg.from?.username || "Unknown User";
+  const text = (msg.text || "").toLowerCase();
+  const username = msg.from?.username || "Guest";
 
-  console.log(`📩 Received message from @${username}: ${text}`);
+  // 1. Audit to Supabase (Lovable Managed)
+  await supabase.from('audit_logs').insert([{ 
+    user_handle: username, 
+    message_content: text, 
+    platform: 'telegram' 
+  }]);
 
-  // Auto-responder for Status check
-  if (text === '/status') {
-    bot.sendMessage(chatId, "✅ EverjoyAi Bridge is online and auditing to Supabase.");
-    return;
-  }
+  // 2. Search 'brand_knowledge' for a keyword match
+  const { data: knowledge } = await supabase
+    .from('brand_knowledge')
+    .select('response_text')
+    .ilike('keyword', `%${text}%`) 
+    .maybeSingle();
 
-  // Audit the interaction to your Supabase 'audit_logs' table
-  try {
-    const { error } = await supabase
-      .from('audit_logs') // Ensure this table exists in your Supabase project
-      .insert([
-        { 
-          user_handle: username, 
-          message_content: text, 
-          platform: 'telegram',
-          created_at: new Date().toISOString()
-        }
-      ]);
-
-    if (error) throw error;
-    console.log("✅ Interaction successfully audited to Supabase.");
-  } catch (err) {
-    console.error("❌ Supabase Audit Failed:", err);
+  if (knowledge) {
+    bot.sendMessage(chatId, knowledge.response_text);
+  } else if (text === '/start' || text.includes('help')) {
+    bot.sendMessage(chatId, "Welcome to EverjoyAi. Ask me about our 'services', 'music', or 'vibe'.");
   }
 });
 
-// 4. MANDATORY: Render Health Check Server
-// This prevents Render from timing out and restarting your bot.
+// Render Health Check
 const port = process.env.PORT || 10000;
-
 http.createServer((req, res) => {
-  // Respond to the /status ping from Cron-job.org or Render
-  if (req.url === '/status' || req.url === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Everjoy Bridge Status: ONLINE');
-  } else {
-    res.writeHead(404);
-    res.end();
-  }
-}).listen(port, '0.0.0.0', () => {
-  console.log(`📡 Health check server listening on port ${port}`);
-});
+  res.writeHead(200);
+  res.end('Everjoy Bridge Status: ONLINE');
+}).listen(port);
