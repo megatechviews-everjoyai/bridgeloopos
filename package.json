@@ -1,24 +1,27 @@
 {
-  "name": "bridgeloop-os",
+  "name": "everjoy-bridgeloop-os",
   "version": "1.0.0",
-  "description": "Bridgeloop — Context Bridge Operations for Autonomous AI",
-  "main": "scripts/bridge.ts",
+  "description": "EverjoyAi Technology - Telegram to Supabase Bridge",
+  "main": "dist/scripts/bridge.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "start": "ts-node scripts/bridge.ts",
-    "build": "tsc"
+    "dev": "ts-node scripts/bridge.ts",
+    "build": "tsc",
+    "start": "node dist/scripts/bridge.js",
+    "fly-deploy": "fly deploy"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "dotenv": "^16.3.1",
-    "resend": "^2.0.0",
-    "telegraf": "^4.15.0"
+    "node-telegram-bot-api": "^0.64.0",
+    "resend": "^3.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.0"
-  },
-  "engines": {
-    "node": ">=18"
+    "@types/node-telegram-bot-api": "^0.64.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.2"
   }
 }

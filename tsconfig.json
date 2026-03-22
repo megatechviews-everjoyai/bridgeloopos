@@ -4,12 +4,13 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "outDir": "./dist",
-    "rootDir": "./scripts",
+    "rootDir": "./", 
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "moduleResolution": "node"
   },
-  "include": ["scripts/**/*"],
+  "include": ["scripts/**/*", ".env"],
   "exclude": ["node_modules", "dist"]
 }
