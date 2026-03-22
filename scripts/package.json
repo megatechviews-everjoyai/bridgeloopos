@@ -1,5 +1,5 @@
 {
-  "name": "everjoy-bridgeloop-os",
+  "name": "bridgeloop-os",
   "version": "1.0.0",
   "description": "EverjoyAi Technology - Telegram to Supabase Bridge",
   "main": "dist/scripts/bridge.js",
@@ -9,8 +9,7 @@
   "scripts": {
     "dev": "ts-node scripts/bridge.ts",
     "build": "tsc",
-    "start": "node dist/scripts/bridge.js",
-    "fly-deploy": "fly deploy"
+    "start": "node dist/scripts/bridge.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
