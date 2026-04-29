@@ -274,12 +274,19 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // ── Thumbnail → skills/calli_art.py (CalliArt subagent) ──
+  // ── Thumbnail → skills/thumbnail_generator.py (Imagen 3.0, locked character) ──
   if (mode === 'thumbnail') {
-    bot.sendMessage(chatId, "🖼️ *Generating thumbnail style guide...*", { parse_mode: 'Markdown' });
-    const result = runPythonSkill('thumbnail', text);
-    bot.sendMessage(chatId, SecretScrubber.scrub(result), { parse_mode: 'Markdown' });
-    await saveToolOutput('thumbnail', text, result);
+    bot.sendMessage(chatId, "🖼️ *Generating thumbnail with Imagen 3.0...*\n_Locking character identity... ~15s_", { parse_mode: 'Markdown' });
+    const raw = runPythonSkill('thumbnail', text);
+    if (raw.startsWith('__IMAGE__')) {
+      const [imageLine, ...captionLines] = raw.split('\n');
+      const imagePath = imageLine.replace('__IMAGE__', '');
+      const caption   = captionLines.join('\n');
+      await bot.sendPhoto(chatId, imagePath, { caption, parse_mode: 'Markdown' });
+    } else {
+      bot.sendMessage(chatId, SecretScrubber.scrub(raw), { parse_mode: 'Markdown' });
+    }
+    await saveToolOutput('thumbnail', text, raw);
     userState[chatId] = { mode: 'idle' };
     return;
   }

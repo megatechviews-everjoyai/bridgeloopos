@@ -50,8 +50,13 @@ try:
         )
 
     elif skill == "thumbnail":
-        from skills.calli_art import CalliArt
-        result = CalliArt().generate_style(prompt)
+        from skills.thumbnail_generator import ThumbnailGenerator
+        image_path, caption = ThumbnailGenerator().generate(prompt)
+        if image_path:
+            # __IMAGE__ prefix tells src/index.ts to send as a photo
+            result = f"__IMAGE__{image_path}\n{caption}"
+        else:
+            result = caption  # fallback: send as text
 
     else:
         result = f"❌ Unknown skill: `{skill}`\nAvailable: gapfinder | executer | webbuilder | thumbnail"
