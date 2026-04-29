@@ -329,14 +329,15 @@ bot.on('message', async (msg) => {
     const raw = execFileSync('python3', [SKILL_RUNNER, 'thumbnail', thumbMode, text], {
       cwd: BASE_DIR, timeout: 60000, encoding: 'utf8'
     }).trim();
-    if (raw.startsWith('__IMAGE__')) {
-      const [imageLine, ...captionLines] = raw.split('\n');
-      const imagePath = imageLine.replace('__IMAGE__', '');
-      // Strip markdown from caption — topic text may contain special chars
-      const caption = captionLines.join('\n').replace(/[*_`]/g, '');
-      await bot.sendPhoto(chatId, imagePath, { caption });
+    const lines     = raw.split('\n');
+    const imageLine = lines.find(l => l.startsWith('__IMAGE__'));
+    if (imageLine) {
+      const imagePath = imageLine.replace('__IMAGE__', '').trim();
+      const caption   = lines.filter(l => !l.startsWith('__IMAGE__')).join('\n').trim();
+      // Use createReadStream so Telegram receives the actual file, not a Mac path
+      await bot.sendPhoto(chatId, fs.createReadStream(imagePath), { caption });
     } else {
-      bot.sendMessage(chatId, SecretScrubber.scrub(raw).replace(/[*_`]/g, ''));
+      bot.sendMessage(chatId, SecretScrubber.scrub(raw));
     }
     await saveToolOutput('thumbnail', text, raw);
     userState[chatId] = { mode: 'idle' };
