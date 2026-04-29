@@ -332,10 +332,11 @@ bot.on('message', async (msg) => {
     if (raw.startsWith('__IMAGE__')) {
       const [imageLine, ...captionLines] = raw.split('\n');
       const imagePath = imageLine.replace('__IMAGE__', '');
-      const caption   = captionLines.join('\n');
-      await bot.sendPhoto(chatId, imagePath, { caption, parse_mode: 'Markdown' });
+      // Strip markdown from caption — topic text may contain special chars
+      const caption = captionLines.join('\n').replace(/[*_`]/g, '');
+      await bot.sendPhoto(chatId, imagePath, { caption });
     } else {
-      bot.sendMessage(chatId, SecretScrubber.scrub(raw), { parse_mode: 'Markdown' });
+      bot.sendMessage(chatId, SecretScrubber.scrub(raw).replace(/[*_`]/g, ''));
     }
     await saveToolOutput('thumbnail', text, raw);
     userState[chatId] = { mode: 'idle' };

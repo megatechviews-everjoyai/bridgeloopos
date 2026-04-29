@@ -80,10 +80,10 @@ class ThumbnailGenerator:
         if rel_path:
             abs_path = str(BASE_DIR / "remotion-engine" / "public" / rel_path)
             caption = (
-                f"🖼️ *Thumbnail Generated*\n\n"
-                f"Mode: _{mode_label}_\n"
-                f"Topic: _{topic}_\n\n"
-                f"_Imagen 3.0 | 16:9 | Locked Identity_"
+                f"🖼️ Thumbnail Generated\n\n"
+                f"Mode: {mode_label}\n"
+                f"Topic: {topic}\n\n"
+                f"Imagen 3.0 | 16:9 | Locked Identity"
             )
             return abs_path, caption
         else:
