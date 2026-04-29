@@ -4,6 +4,7 @@ import * as dotenv from 'dotenv';
 import http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 
 import { DirectorService } from './services/director';
 import { SocialsService } from './services/socials';
@@ -43,6 +44,18 @@ const draftCache    = new Map<number, string>();
 // State: { mode, step, data }
 const userState: Record<number, { mode: string; step?: string; data?: any }> = {};
 const BASE_DIR      = process.cwd();
+const SKILL_RUNNER  = path.join(BASE_DIR, 'scripts', 'skill_runner.py');
+
+// Delegate to a Python skill subagent via skill_runner.py
+function runPythonSkill(skill: string, prompt: string): string {
+  try {
+    return execFileSync('python3', [SKILL_RUNNER, skill, prompt], {
+      cwd: BASE_DIR, timeout: 30000, encoding: 'utf8'
+    }).trim();
+  } catch (e: any) {
+    return `❌ Skill error: ${e.stderr || e.message}`;
+  }
+}
 
 console.log("🚀 Bridgeloop OS: Hardened Command Center Online.");
 
@@ -240,15 +253,17 @@ bot.on('message', async (msg) => {
   const { mode, step, data } = state;
 
   // ── Simple single-step modes ────────────────────────────────────────────────
+  // Python skill subagents are called via skill_runner.py (execFileSync)
+  // TypeScript services handle marketing, design, worldbuilder, director, security
   const simpleRoutes: Record<string, () => Promise<string>> = {
     video:      () => director.getCreativeBrief(text).then(b => `📽️ *Video Brief*\n\n${b?.titles || 'Processing'}\n\n${b?.pose || ''}`),
     webinar:    () => marketing.runLaunchStrategy(text),
     signature:  () => marketing.runLaunchStrategy(`Signature founder deck: ${text}`),
-    gapfinder:  () => marketing.runCompetitorProfiler(text),
-    executer:   () => marketing.runContentStrategy(text),
+    gapfinder:  () => Promise.resolve(runPythonSkill('gapfinder',  text)),  // → skills/gapfinder.py
+    executer:   () => Promise.resolve(runPythonSkill('executer',   text)),  // → skills/executer.py
     copywriter: () => marketing.runCopywriter('homepage', text),
     create_ad:  () => marketing.runPaidAds(text, 'Meta'),
-    webbuilder: () => marketing.runCopywriter('landing', text),
+    webbuilder: () => Promise.resolve(runPythonSkill('webbuilder', text)),  // → skills/web_builder.py
   };
 
   if (simpleRoutes[mode]) {
@@ -259,12 +274,12 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // ── Thumbnail ──
+  // ── Thumbnail → skills/calli_art.py (CalliArt subagent) ──
   if (mode === 'thumbnail') {
-    bot.sendMessage(chatId, "🖼️ *Generating thumbnail...*", { parse_mode: 'Markdown' });
-    const result = await designer.generateDesign('gallery', 'everjoy', text);
-    await deliverDesignResult(chatId, result, 'everjoy', 'thumbnail');
-    await saveToolOutput('thumbnail', text, result.imagePath || result.error || '');
+    bot.sendMessage(chatId, "🖼️ *Generating thumbnail style guide...*", { parse_mode: 'Markdown' });
+    const result = runPythonSkill('thumbnail', text);
+    bot.sendMessage(chatId, SecretScrubber.scrub(result), { parse_mode: 'Markdown' });
+    await saveToolOutput('thumbnail', text, result);
     userState[chatId] = { mode: 'idle' };
     return;
   }
