@@ -44,6 +44,8 @@ const draftCache    = new Map<number, string>();
 // State: { mode, step, data }
 const userState: Record<number, { mode: string; step?: string; data?: any }> = {};
 const BASE_DIR      = process.cwd();
+const REFS_DIR      = path.join(BASE_DIR, 'backend', 'references');
+fs.mkdirSync(REFS_DIR, { recursive: true });
 const SKILL_RUNNER  = path.join(BASE_DIR, 'scripts', 'skill_runner.py');
 
 // Delegate to a Python skill subagent via skill_runner.py
@@ -232,6 +234,50 @@ bot.on('message', async (msg) => {
     return;
   }
 
+  // ── /setmyface — collect face reference thumbnails ──
+  if (text === '/setmyface') {
+    userState[chatId] = { mode: 'collecting_refs', data: { refType: 'face', images: [] } };
+    return bot.sendMessage(chatId,
+      "👤 *Set My Face Reference*\n\nSend me several of your best thumbnails showing your face clearly.\nWhen done, send `/done` — I'll analyze them all and lock your identity.\n\n_More photos = better consistency._",
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  // ── /setavatar — collect avatar reference thumbnails ──
+  if (text === '/setavatar') {
+    userState[chatId] = { mode: 'collecting_refs', data: { refType: 'avatar', images: [] } };
+    return bot.sendMessage(chatId,
+      "🎭 *Set Avatar Reference*\n\nSend me several of your best avatar thumbnails.\nWhen done, send `/done` — I'll analyze them and lock the character identity.\n\n_More images = better consistency._",
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  // ── /done — finish reference collection and analyze ──
+  if (text === '/done' && userState[chatId]?.mode === 'collecting_refs') {
+    const { refType, images } = userState[chatId].data;
+    userState[chatId] = { mode: 'idle' };
+    if (!images || images.length === 0) {
+      return bot.sendMessage(chatId, "❌ No images received. Send photos first, then `/done`.");
+    }
+    bot.sendMessage(chatId,
+      `🔍 *Analyzing ${images.length} reference image(s) with Gemini Vision...*\n_Locking ${refType === 'face' ? 'your face' : 'avatar'} identity..._`,
+      { parse_mode: 'Markdown' }
+    );
+    try {
+      const result = execFileSync('python3', [
+        path.join(BASE_DIR, 'scripts', 'analyze_references.py'),
+        refType, ...images
+      ], { cwd: BASE_DIR, timeout: 60000, encoding: 'utf8' }).trim();
+      bot.sendMessage(chatId,
+        `✅ *${refType === 'face' ? 'Face' : 'Avatar'} identity locked!*\n\nAll future thumbnails in this mode will look consistent.\n\n_Description saved to backend/references/${refType}_description.json_`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e: any) {
+      bot.sendMessage(chatId, `❌ Analysis failed: ${e.stderr || e.message}`);
+    }
+    return;
+  }
+
   if (text.startsWith('/socials ')) {
     const draft = await socials.generateSlayPost(text.replace('/socials ', '').trim(), "LinkedIn");
     if (draft) {
@@ -274,10 +320,15 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // ── Thumbnail → skills/thumbnail_generator.py (Imagen 3.0, locked character) ──
+  // ── Thumbnail → skills/thumbnail_generator.py (Imagen 3.0, locked identity) ──
   if (mode === 'thumbnail') {
-    bot.sendMessage(chatId, "🖼️ *Generating thumbnail with Imagen 3.0...*\n_Locking character identity... ~15s_", { parse_mode: 'Markdown' });
-    const raw = runPythonSkill('thumbnail', text);
+    const thumbMode = data?.thumbMode || 'avatar';
+    const modeLabel = thumbMode === 'face' ? 'My Face' : 'Avatar';
+    bot.sendMessage(chatId, `🖼️ *Generating thumbnail — ${modeLabel} mode...*\n_~15s_`, { parse_mode: 'Markdown' });
+    // skill_runner: python3 skill_runner.py thumbnail <mode> <topic...>
+    const raw = execFileSync('python3', [SKILL_RUNNER, 'thumbnail', thumbMode, text], {
+      cwd: BASE_DIR, timeout: 60000, encoding: 'utf8'
+    }).trim();
     if (raw.startsWith('__IMAGE__')) {
       const [imageLine, ...captionLines] = raw.split('\n');
       const imagePath = imageLine.replace('__IMAGE__', '');
@@ -323,6 +374,34 @@ bot.on('message', async (msg) => {
     await handleWorldStep(chatId, mode, step, text, data);
     return;
   }
+});
+
+// ── PHOTO HANDLER — saves reference images during /setmyface or /setavatar ───
+bot.on('photo', async (msg) => {
+  if (msg.from?.id !== ADMIN_ID) return;
+  const chatId = msg.chat.id;
+  const state  = userState[chatId];
+
+  if (state?.mode !== 'collecting_refs') return;
+
+  // Download the highest-res version of the photo
+  const photos  = msg.photo!;
+  const best    = photos[photos.length - 1]; // largest size
+  const fileUrl = await bot.getFileLink(best.file_id);
+  const response = await fetch(fileUrl);
+  const buffer   = Buffer.from(await response.arrayBuffer());
+
+  const refType  = state.data.refType as string;
+  const idx      = (state.data.images as string[]).length + 1;
+  const savePath = path.join(REFS_DIR, `${refType}_ref_${idx}.jpg`);
+
+  fs.writeFileSync(savePath, buffer);
+  (state.data.images as string[]).push(savePath);
+
+  bot.sendMessage(chatId,
+    `📸 Got it — reference ${idx} saved.\nSend more photos or send \`/done\` to analyze.`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // ── CALLBACK / BUTTON HANDLER ─────────────────────────────────────────────────
@@ -403,9 +482,32 @@ bot.on('callback_query', async (q) => {
   };
 
   if (simpleModes[data]) {
+    // Thumbnail gets an identity picker first
+    if (data === 'start_thumb') {
+      const faceExists   = fs.existsSync(path.join(REFS_DIR, 'face_description.json'));
+      const avatarExists = fs.existsSync(path.join(REFS_DIR, 'avatar_description.json'));
+      bot.sendMessage(chatId, "🖼️ *Thumbnail* — Choose identity:", {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: `👤 My Face${faceExists ? ' ✓' : ' (not set)'}`,   callback_data: 'thumb_face'   },
+            { text: `🎭 Avatar${avatarExists ? ' ✓' : ' (not set)'}`,  callback_data: 'thumb_avatar' }
+          ]]
+        }
+      });
+      return bot.answerCallbackQuery(q.id);
+    }
     const { mode, prompt } = simpleModes[data];
     userState[chatId] = { mode };
     bot.sendMessage(chatId, prompt, { parse_mode: 'Markdown' });
+    return bot.answerCallbackQuery(q.id);
+  }
+
+  // ── Thumbnail identity selection ──
+  if (data === 'thumb_face' || data === 'thumb_avatar') {
+    const thumbMode = data === 'thumb_face' ? 'face' : 'avatar';
+    userState[chatId] = { mode: 'thumbnail', data: { thumbMode } };
+    bot.sendMessage(chatId, "🖼️ *Describe the thumbnail topic or scene:*\n_(e.g. \"How AI is replacing agencies in 2026\")_", { parse_mode: 'Markdown' });
     return bot.answerCallbackQuery(q.id);
   }
 

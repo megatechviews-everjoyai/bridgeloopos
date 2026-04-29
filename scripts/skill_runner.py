@@ -50,13 +50,15 @@ try:
         )
 
     elif skill == "thumbnail":
+        # argv[2] = mode ("face" or "avatar"), argv[3:] = topic
+        mode  = sys.argv[2] if len(sys.argv) > 2 else "avatar"
+        topic = " ".join(sys.argv[3:]) if len(sys.argv) > 3 else prompt
         from skills.thumbnail_generator import ThumbnailGenerator
-        image_path, caption = ThumbnailGenerator().generate(prompt)
+        image_path, caption = ThumbnailGenerator().generate(topic, mode)
         if image_path:
-            # __IMAGE__ prefix tells src/index.ts to send as a photo
             result = f"__IMAGE__{image_path}\n{caption}"
         else:
-            result = caption  # fallback: send as text
+            result = caption
 
     else:
         result = f"❌ Unknown skill: `{skill}`\nAvailable: gapfinder | executer | webbuilder | thumbnail"
