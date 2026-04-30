@@ -90,7 +90,7 @@ const mainMenu = {
       [{ text: "🖼️ Thumbnail",        callback_data: "start_thumb"    }, { text: "📊 Stats",          callback_data: "run_stats"        }],
       [{ text: "🔍 Run Audit",        callback_data: "run_audit"      }, { text: "🌐 Webbuilder",     callback_data: "start_web"        }],
       [{ text: "📣 Marketing",        callback_data: "open_marketing" }, { text: "🎨 Design",         callback_data: "open_design"      }],
-      [{ text: "🌍 3D World",         callback_data: "open_world"     }],
+      [{ text: "🌍 3D World",         callback_data: "open_world"     }, { text: "📸 Image Post",      callback_data: "open_image_post" }],
       [{ text: "🖥️ Bridgeloop Status",callback_data: "bridgeloop_status" }]
     ]
   }
@@ -126,6 +126,17 @@ const worldTypeMenu = {
     ]
   }
 };
+
+const imagePostMenu = {
+  reply_markup: {
+    inline_keyboard: [[
+      { text: "💜 EverjoyAI",    callback_data: "img_everjoy" },
+      { text: "🌿 Lave Gallery", callback_data: "img_lave"    }
+    ]]
+  }
+};
+
+const IMAGE_POST_SCRIPT = path.join(BASE_DIR, 'scripts', 'engines', 'image_post.py');
 
 const brandMenu = (prefix: string) => ({
   reply_markup: {
@@ -371,6 +382,29 @@ bot.on('message', async (msg) => {
     return;
   }
 
+  // ── Image Post ───────────────────────────────────────────────────────────────
+  if (mode === 'img_build') {
+    const brand      = data?.brand || 'everjoyai';
+    const brandLabel = brand === 'everjoyai' ? 'EverjoyAI' : 'Lave Gallery';
+    bot.sendMessage(chatId, `📸 *Generating ${brandLabel} post...* (~20s)`, { parse_mode: 'Markdown' });
+    bot.sendChatAction(chatId, 'upload_photo');
+    try {
+      const raw     = execFileSync('python3', [IMAGE_POST_SCRIPT, brand, text], { cwd: BASE_DIR, timeout: 120000, encoding: 'utf8' }).trim();
+      const lines   = raw.split('\n');
+      const result  = JSON.parse(lines[lines.length - 1]);
+      if (result.success && result.path) {
+        await bot.sendPhoto(chatId, fs.createReadStream(result.path), { caption: result.caption });
+        await saveToolOutput('image_post', text, result.path);
+      } else {
+        bot.sendMessage(chatId, `❌ Image Post failed: ${result.error}`);
+      }
+    } catch (e: any) {
+      bot.sendMessage(chatId, `❌ Image Post error: ${e.stderr || e.message}`);
+    }
+    userState[chatId] = { mode: 'idle' };
+    return;
+  }
+
   // ── 3D World multi-step ─────────────────────────────────────────────────────
   if (mode.startsWith('wld_')) {
     await handleWorldStep(chatId, mode, step, text, data);
@@ -466,6 +500,26 @@ bot.on('callback_query', async (q) => {
   }
   if (data === 'open_world') {
     bot.sendMessage(chatId, "🌍 *3D World Builder Online.* Select scene type:", { ...worldTypeMenu, parse_mode: 'Markdown' });
+    return bot.answerCallbackQuery(q.id);
+  }
+
+  if (data === 'open_image_post') {
+    bot.sendMessage(chatId,
+      "📸 *Instagram Image Post*\n\n💜 *EverjoyAI* — Cyberpunk tech scene with the avatar\n🌿 *Lave Gallery* — Nature scene + Bible verse of the day\n\nChoose brand:",
+      { ...imagePostMenu, parse_mode: 'Markdown' }
+    );
+    return bot.answerCallbackQuery(q.id);
+  }
+
+  if (data === 'img_everjoy') {
+    userState[chatId] = { mode: 'img_build', data: { brand: 'everjoyai' } };
+    bot.sendMessage(chatId, "💜 *EverjoyAI Post*\n\nDescribe the topic or theme:\n\n_Example: 'AI is replacing creative agencies'_", { parse_mode: 'Markdown' });
+    return bot.answerCallbackQuery(q.id);
+  }
+
+  if (data === 'img_lave') {
+    userState[chatId] = { mode: 'img_build', data: { brand: 'lave_gallery' } };
+    bot.sendMessage(chatId, "🌿 *Lave Gallery Post*\n\nToday's Bible verse is auto-selected.\nSend a mood/theme — or just send `go`:\n\n_Example: 'peaceful morning'_", { parse_mode: 'Markdown' });
     return bot.answerCallbackQuery(q.id);
   }
 

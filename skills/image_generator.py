@@ -14,7 +14,8 @@ BASE_DIR = Path(__file__).parent.parent
 SHOTS_DIR = BASE_DIR / "remotion-engine" / "public" / "shots"
 SHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
-IMAGEN_MODEL   = "imagen-3.0-generate-001"
+IMAGEN_MODEL            = "imagen-3.0-generate-001"
+IMAGEN_MODEL_CAPABILITY = "imagen-3.0-capability-001"  # supports subject reference
 IMAGEN_REGION  = os.getenv("GCP_LOCATION", "us-central1")
 
 def _get_project_id():
@@ -52,9 +53,12 @@ def _get_access_token():
         return None
 
 
-def generate_shot(description: str, shot_name: str, aspect_ratio: str = "16:9"):
+def generate_shot(description: str, shot_name: str, aspect_ratio: str = "16:9",
+                  reference_image_path: str = None):
     """
     Generate one photorealistic shot via Imagen.
+    If reference_image_path is provided, uses imagen-3.0-capability-001 with
+    subject reference to lock the person's face/appearance.
     Returns local file path (relative to remotion-engine/public/) or None on failure.
     """
     token = _get_access_token()
@@ -62,19 +66,36 @@ def generate_shot(description: str, shot_name: str, aspect_ratio: str = "16:9"):
         print(f"[ImageGen] No token — skipping real image for: {shot_name}")
         return None
 
+    use_reference = reference_image_path and Path(reference_image_path).exists()
+    model = IMAGEN_MODEL_CAPABILITY if use_reference else IMAGEN_MODEL
+
     url = (
         f"https://{IMAGEN_REGION}-aiplatform.googleapis.com/v1/"
         f"projects/{IMAGEN_PROJECT}/locations/{IMAGEN_REGION}/"
-        f"publishers/google/models/{IMAGEN_MODEL}:predict"
+        f"publishers/google/models/{model}:predict"
     )
 
+    instance = {"prompt": description}
+    if use_reference:
+        ref_b64 = base64.b64encode(Path(reference_image_path).read_bytes()).decode()
+        instance["referenceImages"] = [{
+            "referenceType": "REFERENCE_TYPE_SUBJECT",
+            "referenceId": 1,
+            "subjectImageConfig": {
+                "subjectDescription": "person",
+                "subjectType": "SUBJECT_TYPE_PERSON",
+            },
+            "referenceImage": {"bytesBase64Encoded": ref_b64},
+        }]
+
     payload = {
-        "instances": [{"prompt": description}],
+        "instances": [instance],
         "parameters": {
             "sampleCount": 1,
             "aspectRatio": aspect_ratio,
             "outputMimeType": "image/jpeg",
             "enhancePrompt": True,
+            "personGeneration": "allow_adult",
         },
     }
 
